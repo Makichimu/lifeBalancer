@@ -1,0 +1,172 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8" />
+  <title>LifeBalancer • Спорт (демо)</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <style>
+    body { font-family: system-ui, -apple-system, Segoe UI, Roboto, sans-serif; margin: 24px; }
+    h1 { margin-bottom: 8px; }
+    .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; align-items: start; }
+    .card { border: 1px solid #e5e7eb; border-radius: 12px; padding: 16px; box-shadow: 0 1px 2px rgba(0,0,0,.04); }
+    button { padding: 8px 12px; border-radius: 8px; border: 1px solid #e5e7eb; background: #111827; color: #fff; cursor: pointer; }
+    button.secondary { background: #fff; color: #111; }
+    pre, code { white-space: pre-wrap; word-break: break-word; }
+    table { width: 100%; border-collapse: collapse; font-size: 14px; }
+    th, td { padding: 6px 8px; border-bottom: 1px solid #eee; text-align: left; }
+    .row { display: flex; gap: 8px; flex-wrap: wrap; }
+    input, select { padding: 8px; border: 1px solid #e5e7eb; border-radius: 8px; }
+    .muted { color: #6b7280; font-size: 12px; }
+  </style>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+</head>
+<body>
+  <h1>Спорт • демо</h1>
+  <p class="muted">Быстрый тест API: упражнения, создание тренировки, список тренировок, график 1RM.</p>
+
+  <div class="grid">
+    <div class="card">
+      <h2>1) Упражнения</h2>
+      <div class="row">
+        <button id="btnLoadExercises">Загрузить</button>
+        <input id="exerciseSearch" placeholder="поиск по названию…" />
+      </div>
+      <table id="exerciseTable">
+        <thead><tr><th>Название</th><th>slug</th><th>ID</th></tr></thead>
+        <tbody></tbody>
+      </table>
+    </div>
+
+    <div class="card">
+      <h2>2) Создать тестовую тренировку</h2>
+      <div class="row">
+        <label>exerciseId: <input id="exerciseId" size="28" placeholder="вставь ID из таблицы слева" /></label>
+        <label>вес (кг): <input id="w" type="number" step="0.5" value="40" /></label>
+        <label>повт.: <input id="r" type="number" value="8" /></label>
+      </div>
+      <div class="row">
+        <button id="btnCreateWorkout">Создать тренировку</button>
+        <button id="btnLoadWorkouts" class="secondary">Показать тренировки</button>
+      </div>
+      <pre id="createOut" class="muted">Ответ появится здесь…</pre>
+    </div>
+
+    <div class="card">
+      <h2>3) Лента тренировок</h2>
+      <table id="workoutsTable">
+        <thead><tr><th>Дата</th><th>Тоннаж (кг)</th><th>Сеты</th><th>Повторы</th></tr></thead>
+        <tbody></tbody>
+      </table>
+    </div>
+
+    <div class="card">
+      <h2>4) Прогресс 1RM</h2>
+      <div class="row">
+        <input id="exerciseIdForChart" size="28" placeholder="exerciseId для графика" />
+        <button id="btnLoad1RM">Построить график</button>
+      </div>
+      <canvas id="oneRmChart" height="180"></canvas>
+    </div>
+  </div>
+
+  <script>
+    const $ = sel => document.querySelector(sel);
+    const tbody = (sel) => $(sel).querySelector('tbody');
+
+    async function loadExercises() {
+      const res = await fetch('/api/sport/exercises');
+      const data = await res.json();
+      const tb = tbody('#exerciseTable');
+      tb.innerHTML = '';
+      data.forEach(x => {
+        const tr = document.createElement('tr');
+        tr.innerHTML = `<td>${x.name}</td><td>${x.slug}</td><td><code>${x.id}</code></td>`;
+        tr.onclick = () => {
+          $('#exerciseId').value = x.id;
+          $('#exerciseIdForChart').value = x.id;
+        };
+        tb.appendChild(tr);
+      });
+
+      // простой поиск по имени
+      $('#exerciseSearch').oninput = (e) => {
+        const q = e.target.value.toLowerCase();
+        [...tb.children].forEach(tr => {
+          tr.style.display = tr.firstChild.textContent.toLowerCase().includes(q) ? '' : 'none';
+        });
+      };
+    }
+
+    async function createWorkout() {
+      const exId = $('#exerciseId').value.trim();
+      if (!exId) return alert('Укажи exerciseId (кликни строку слева).');
+      const weight = parseFloat($('#w').value);
+      const reps = parseInt($('#r').value, 10);
+
+      const payload = {
+        bodyweightKg: null,
+        notes: 'demo workout via /sport-demo',
+        exercises: [
+          {
+            exerciseId: exId,
+            orderIndex: 0,
+            sets: [
+              { setIndex: 0, setType: 'WARMUP', weightKg: weight * 0.5, repsActual: Math.max(3, Math.round(reps*0.5)) },
+              { setIndex: 1, setType: 'WORKING', weightKg: weight, repsActual: reps }
+            ]
+          }
+        ]
+      };
+
+      const res = await fetch('/api/sport/workouts', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
+      });
+      const data = await res.json();
+      $('#createOut').textContent = JSON.stringify(data, null, 2);
+      await loadWorkouts();
+    }
+
+    async function loadWorkouts() {
+      const res = await fetch('/api/sport/workouts');
+      const data = await res.json();
+      const tb = tbody('#workoutsTable');
+      tb.innerHTML = '';
+      data.forEach(w => {
+        const tr = document.createElement('tr');
+        const dt = new Date(w.startedAt).toLocaleString();
+        tr.innerHTML = `<td>${dt}</td><td>${w.totalVolumeKg ?? 0}</td><td>${w.totalSets}</td><td>${w.totalReps}</td>`;
+        tb.appendChild(tr);
+      });
+    }
+
+    let chart;
+    async function load1RM() {
+      const exId = $('#exerciseIdForChart').value.trim();
+      if (!exId) return alert('Укажи exerciseId.');
+      const res = await fetch(`/api/sport/progress/${exId}`);
+      const data = await res.json();
+      const series = data.oneRm || [];
+      const labels = series.map(s => new Date(s.date).toLocaleDateString());
+      const values = series.map(s => s.estimatedKg);
+
+      if (chart) chart.destroy();
+      const ctx = document.getElementById('oneRmChart').getContext('2d');
+      chart = new Chart(ctx, {
+        type: 'line',
+        data: { labels, datasets: [{ label: '1RM (кг)', data: values, tension: 0.2 }] },
+        options: { responsive: true, scales: { y: { beginAtZero: false } } }
+      });
+    }
+
+    // hooks
+    $('#btnLoadExercises').onclick = loadExercises;
+    $('#btnCreateWorkout').onclick = createWorkout;
+    $('#btnLoadWorkouts').onclick = loadWorkouts;
+    $('#btnLoad1RM').onclick = load1RM;
+
+    // авто-инициализация
+    loadExercises().then(loadWorkouts);
+  </script>
+</body>
+</html>

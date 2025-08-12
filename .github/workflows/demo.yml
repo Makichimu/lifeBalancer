@@ -1,0 +1,46 @@
+name: demo-instance
+
+on:
+  workflow_dispatch:
+
+jobs:
+  demo:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: lifebalancer
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    env:
+      DATABASE_URL: postgresql://postgres:postgres@localhost:5432/lifebalancer?schema=public
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: 'npm'
+      - run: npm ci
+      - run: npm run prisma:generate
+      - run: npx prisma db push
+      - run: npm run db:seed
+      - run: npm run build
+      - name: Start demo server
+        run: |
+          npm start &
+          sleep 5
+          wget -q https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-linux-amd64 -O cloudflared
+          chmod +x cloudflared
+          ./cloudflared tunnel --url http://localhost:3000 > cloudflared.log 2>&1 &
+          sleep 5
+          echo "Your demo is live at:"
+          grep -oE "https://[0-9a-z-]+\.trycloudflare\.com" cloudflared.log
+          tail -f /dev/null

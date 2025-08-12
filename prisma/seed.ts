@@ -2,6 +2,15 @@ import { PrismaClient } from '@prisma/client';
 const prisma = new PrismaClient();
 
 async function main() {
+  await prisma.user.upsert({
+    where: { id: 'demo-user' },
+    update: {},
+    create: {
+      id: 'demo-user',
+      email: 'demo@example.com',
+      displayName: 'Demo User',
+    },
+  });
   const chest = await prisma.muscleGroup.upsert({
     where: { name: 'Chest' },
     update: {},
