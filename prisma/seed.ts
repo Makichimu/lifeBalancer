@@ -36,4 +36,11 @@ async function main() {
   });
 }
 
-main().finally(() => prisma.$disconnect());
+main()
+  .catch((err) => {
+    console.error('Seeding failed:', err);
+    process.exit(1);
+  })
+  .finally(async () => {
+    await prisma.$disconnect();
+  });
