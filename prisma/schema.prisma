@@ -1,0 +1,164 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum UnitSystem {
+  METRIC
+  IMPERIAL
+}
+
+enum ExerciseType {
+  STRENGTH
+  CARDIO
+  MOBILITY
+}
+
+enum SetType {
+  WARMUP
+  WORKING
+  DROP
+  BACKOFF
+  FAILURE
+  COOLDOWN
+}
+
+enum Side {
+  LEFT
+  RIGHT
+  BOTH
+}
+
+enum OneRmFormula {
+  EPLEY
+  BRZYCKI
+  OCONNOR
+}
+
+model User {
+  id           String   @id @default(cuid())
+  email        String   @unique
+  displayName  String?
+  unitSystem   UnitSystem @default(METRIC)
+  createdAt    DateTime @default(now())
+  workouts     Workout[]
+}
+
+model Equipment {
+  id          String  @id @default(cuid())
+  name        String  @unique
+  barWeightKg Float?
+  metadata    Json?
+  exercises   Exercise[]
+}
+
+model MuscleGroup {
+  id      String  @id @default(cuid())
+  name    String  @unique
+  muscles Muscle[]
+}
+
+model Muscle {
+  id        String       @id @default(cuid())
+  name      String
+  group     MuscleGroup  @relation(fields: [groupId], references: [id])
+  groupId   String
+  exercises ExerciseMuscle[]
+  @@unique([name, groupId])
+}
+
+model Exercise {
+  id                 String  @id @default(cuid())
+  slug               String  @unique
+  name               String
+  type               ExerciseType
+  defaultEquipmentId String?
+  defaultEquipment   Equipment? @relation(fields: [defaultEquipmentId], references: [id])
+  unilateral         Boolean @default(false)
+  metrics            Json     // { weight: true, reps: true, duration: false, ... }
+  muscles            ExerciseMuscle[]
+  workoutExercises   WorkoutExercise[]
+  oneRmEstimates     OneRmEstimate[]
+}
+
+model ExerciseMuscle {
+  exercise   Exercise @relation(fields: [exerciseId], references: [id])
+  exerciseId String
+  muscle     Muscle   @relation(fields: [muscleId], references: [id])
+  muscleId   String
+  role       String   // 'PRIMARY' | 'SECONDARY'
+  @@id([exerciseId, muscleId])
+}
+
+model Workout {
+  id             String   @id @default(cuid())
+  user           User     @relation(fields: [userId], references: [id])
+  userId         String
+  startedAt      DateTime @default(now())
+  completedAt    DateTime?
+  bodyweightKg   Float?
+  mood           Int?
+  soreness       Int?
+  energy         Int?
+  notes          String?
+  totalVolumeKg  Float    @default(0)
+  totalReps      Int      @default(0)
+  totalSets      Int      @default(0)
+  durationSec    Int      @default(0)
+  exercises      WorkoutExercise[]
+  oneRmEstimates OneRmEstimate[]
+}
+
+model WorkoutExercise {
+  id            String   @id @default(cuid())
+  workout       Workout  @relation(fields: [workoutId], references: [id])
+  workoutId     String
+  exercise      Exercise @relation(fields: [exerciseId], references: [id])
+  exerciseId    String
+  orderIndex    Int
+  supersetGroup Int?
+  notes         String?
+  sets          Set[]
+}
+
+model Set {
+  id                 String   @id @default(cuid())
+  workoutExercise    WorkoutExercise @relation(fields: [workoutExerciseId], references: [id])
+  workoutExerciseId  String
+  setIndex           Int
+  setType            SetType
+  side               Side     @default(BOTH)
+  weightKg           Float?
+  repsTarget         Int?
+  repsActual         Int?
+  distanceM          Int?
+  durationSec        Int?
+  rpe                Float?
+  rir                Float?
+  pct1RmTarget       Float?
+  restPlannedSec     Int?
+  restActualSec      Int?
+  tempo              String?
+  assistanceKg       Float?
+  isPr               Boolean  @default(false)
+  notes              String?
+  oneRmEstimates     OneRmEstimate[]
+}
+
+model OneRmEstimate {
+  id           String   @id @default(cuid())
+  workout      Workout  @relation(fields: [workoutId], references: [id])
+  workoutId    String
+  exercise     Exercise @relation(fields: [exerciseId], references: [id])
+  exerciseId   String
+  set          Set?     @relation(fields: [setId], references: [id])
+  setId        String?
+  formula      OneRmFormula
+  estimatedKg  Float
+  date         DateTime @default(now())
+  @@index([workoutId, exerciseId, date])
+}
